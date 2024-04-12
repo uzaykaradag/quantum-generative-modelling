@@ -1,6 +1,7 @@
 #############################################
 # Stochastic Gradient Adaptive Langevin-Thermostat (SGADA)
 #############################################
+
 import matplotlib.pyplot as plt
 import qujax
 import numpy as np
@@ -13,13 +14,13 @@ from .helper_funcs  import *
 def G(p, params_for_sgada):
     from jax import numpy as jnp
     import numpy as np
-    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a = params_for_sgada
+    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a, _ = params_for_sgada
     return mu_inv * (p.T @ M_inv @ p - N_d * kBT)
 
 def A_step(q,p,xi,h, params_for_sgada):
     from jax import numpy as jnp
     import numpy as np
-    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a = params_for_sgada
+    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a, _ = params_for_sgada
     q = q + h * M_inv @ p
     return q,p,xi
 
@@ -30,7 +31,7 @@ def B_step(q,p,xi,h,force, params_for_sgada):
 def O_step(q,p,xi,h, params_for_sgada):
     from jax import numpy as jnp
     import numpy as np
-    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a = params_for_sgada
+    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a, _ = params_for_sgada
     
     term1 = np.exp(-xi*h) * p
     term2 = sigma_a * np.sqrt((1 - np.exp(-2 * xi * h)) / (2 * xi)) * np.random.randn(p.shape[0])
@@ -40,7 +41,6 @@ def O_step(q,p,xi,h, params_for_sgada):
 def D_step(q,p,xi,h, params_for_sgada):
     from jax import numpy as jnp
     import numpy as np
-    M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a = params_for_sgada
     xi = xi + h * G(p, params_for_sgada)
     return q,p,xi
 
@@ -62,7 +62,7 @@ def force_for_SGADA(q, param_to_st, data_probs, bandwidth_sq, data):
     cost_val, cost_grad = value_and_grad(param_to_mmd)(q, param_to_st, data_probs, bandwidth_sq, data)
     return cost_val, cost_grad
 
-def run_model_SGADA(data, noise_flag, beta=100, n_steps=500, n_qubits=8, circuit_depth=3, print_flag=False ):
+def run_model_SGADA(data, hyperparameters, stochastic_flag = True, print_flag=False):
     from jax import numpy as jnp, random, vmap
     import matplotlib.pyplot as plt
     import qujax
@@ -70,25 +70,17 @@ def run_model_SGADA(data, noise_flag, beta=100, n_steps=500, n_qubits=8, circuit
     init_rad = 0.001 / jnp.pi
     random_key = random.PRNGKey(0)
     init_key, train_key = random.split(random_key)
-    
-    ## These take awhile for large data sets
-    # computes pairwise 
-    dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
     # get bandwidth
-    bandwidth_sq = jnp.median(dist_mat) / 2
-
-    gates, qubit_inds, param_inds, n_params = get_circuit(n_qubits, circuit_depth)
+    dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
+    bandwidth_sq = 5.7478714 # for GMM #jnp.median(dist_mat) / 2 
 
     ## params
-    M       =  jnp.eye(n_params)
-    M_inv   =  jnp.eye(n_params)
-    mu_inv  =  1
-    N_d     =  1
-    kBT     = 1/ beta 
-    sigma   = 1 
-    sigma_a = 1 
+    h, M, mu_inv, N_d, beta, sigma, sigma_a, n_steps, n_qubits, circuit_depth, batch_size = hyperparameters.values()
+    gates, qubit_inds, param_inds, n_params = get_circuit(n_qubits, circuit_depth)
+    M_inv = jnp.linalg.inv(M) # Omit this eventually and use a solve later as we should never invert a matrix
+    kBT     = 1 / beta 
     # combine them 
-    params_for_sgada = ( M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a)
+    params_for_sgada = (M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a, batch_size)
     
     param_to_st = qujax.get_params_to_statetensor_func(gates, qubit_inds, param_inds)
     data_probs = jnp.ones(len(data)) / len(data)
@@ -105,7 +97,7 @@ def run_model_SGADA(data, noise_flag, beta=100, n_steps=500, n_qubits=8, circuit
     train_keys = random.split(train_key, n_steps - 1)
     # run the sim
     params, p_traj, xi_traj, cost_vals, total_run_time = run_simulation_SGADA(
-        noise_flag=noise_flag, 
+        stochastic_flag=stochastic_flag, 
         q0=params[0],
         p0=np.random.randn(n_params),
         xi0=0.0,
@@ -130,11 +122,12 @@ def run_model_SGADA(data, noise_flag, beta=100, n_steps=500, n_qubits=8, circuit
 
     final_params = params[-1]
     final_st = param_to_st(final_params)
-    return (jnp.square(jnp.abs(final_st.flatten())), cost_vals, total_run_time, params)
+    return (jnp.square(jnp.abs(final_st.flatten())), cost_vals, total_run_time, params, param_to_st)
 
 
 
-def run_simulation_SGADA(noise_flag,q0, p0, xi0,h,step_function,force,Nsteps,params_for_sgada,train_keys, param_to_st, data_probs,bandwidth_sq,data ):
+def run_simulation_SGADA(stochastic_flag,q0, p0, xi0,h,step_function,force,Nsteps,
+                         params_for_sgada,train_keys, param_to_st,data_probs,bandwidth_sq,data):
     import time
     
     bar_length = 30
@@ -148,17 +141,16 @@ def run_simulation_SGADA(noise_flag,q0, p0, xi0,h,step_function,force,Nsteps,par
     p = p0
     xi = xi0
     
-    start_time = time.time()  # Record the start time
-
+    start_time = time.time()  # Record the sstart time
+    _, _, _, _, _, _, _, batch_size= params_for_sgada
     for n in range(Nsteps):
-        cost_val, cost_grad = value_and_grad(param_to_mmd)(q_traj[n - 1], param_to_st, data_probs, bandwidth_sq, data)
 
-        noise = 0
-        if noise_flag:
-            noise = random.normal(train_keys[n - 1], shape=cost_grad.shape, dtype=jnp.float32)
-        cost_grad = cost_grad + noise
+        if stochastic_flag:
+            cost_val, cost_grad = value_and_grad(param_to_mmd_stochastic)(q_traj[n - 1], param_to_st, data, bandwidth_sq, batch_size)
+        else:
+            cost_val, cost_grad = value_and_grad(param_to_mmd)(q_traj[n - 1], param_to_st, data_probs, bandwidth_sq, data)
         
-        q,p,xi = step_function(q, p, xi, h, force, params_for_sgada )
+        q,p,xi = step_function(q, p, xi, h, force, params_for_sgada)
         cost_vals.append(cost_val)
 
         q_traj += [q]

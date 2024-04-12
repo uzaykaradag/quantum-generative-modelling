@@ -77,7 +77,6 @@ def get_circuit(n_qubits, depth):
 
 
 def gaussian_kernel(s1, s2, bandwidth_sq):
-
     return jnp.exp(-jnp.square(s1 - s2) / bandwidth_sq)
 
 def param_to_mmd(param, param_to_st, data_probs, bandwidth_sq, data):
@@ -86,7 +85,13 @@ def param_to_mmd(param, param_to_st, data_probs, bandwidth_sq, data):
     probs = jnp.square(jnp.abs(st.flatten()))
     return mmd(lambda s1, s2: gaussian_kernel(s1, s2, bandwidth_sq), jnp.arange(st.size), probs, data, data_probs)
 
-def compute_av_probs(params, burn_in):
+def param_to_mmd_stochastic(param, param_to_st, data, bandwidth_sq, batch_size):
+    data_probs = jnp.ones(batch_size) / batch_size
+    st = param_to_st(param)
+    probs = jnp.square(jnp.abs(st.flatten()))
+    return mmd(lambda s1, s2: gaussian_kernel(s1, s2, bandwidth_sq), jnp.arange(st.size), probs, np.random.choice(data, batch_size), data_probs)
+
+def compute_av_probs(params, param_to_st, burn_in = 100):
     from jax import numpy as jnp, vmap
     probs = vmap(lambda p: jnp.square(jnp.abs(param_to_st(p).flatten())))(params[burn_in:])
     return probs.mean(axis=0)
