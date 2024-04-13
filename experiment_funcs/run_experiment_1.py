@@ -16,7 +16,6 @@ def run_experiment_1(data, qubit_range, depth_range, sgada_hyperparams, sgld_hyp
             # Update hyperparameters with the current n_qubits and circuit_depth
             sgada_hyperparams['n_qubits'] = n_qubits
             sgada_hyperparams['circuit_depth'] = circuit_depth
-            print('M', M, "n_params" n_params)
             sgada_hyperparams['M'] = jnp.eye(n_params)
 
             sgld_hyperparams['n_qubits'] = n_qubits
