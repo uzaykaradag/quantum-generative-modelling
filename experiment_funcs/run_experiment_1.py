@@ -2,7 +2,7 @@ import os
 import pickle
 from simulation_funcs.model_SGADA import *
 from simulation_funcs.model_SGLD import *
-from multiprocessing import Pool
+from jax.experimental import multihost_utils
 
 def run_experiment(params):
     n_qubits, circuit_depth, data, sgada_hyperparams, sgld_hyperparams, output_folder, stochastic_flag = params
@@ -48,12 +48,11 @@ def run_experiment(params):
 
     print(f"Results saved to {filepath}")
 
-def run_experiment_1(data, qubit_range, depth_range, sgada_hyperparams, sgld_hyperparams, output_folder, stochastic_flag=False, num_processes=None):
+def run_experiment_1(data, qubit_range, depth_range, sgada_hyperparams, sgld_hyperparams, output_folder, stochastic_flag=False):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
     params_list = [(n_qubits, circuit_depth, data, sgada_hyperparams, sgld_hyperparams, output_folder, stochastic_flag)
                    for n_qubits in qubit_range for circuit_depth in depth_range]
 
-    with Pool(processes=num_processes) as pool:
-        pool.map(run_experiment, params_list)
+    multihost_utils.spawn(run_experiment, args_list=params_list)
