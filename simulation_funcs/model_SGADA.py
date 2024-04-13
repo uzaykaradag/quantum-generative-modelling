@@ -77,7 +77,8 @@ def run_model_SGADA(data, hyperparameters, stochastic_flag = True, print_flag=Fa
     ## params
     h, M, mu_inv, N_d, beta, sigma, sigma_a, n_steps, n_qubits, circuit_depth, batch_size = hyperparameters.values()
     gates, qubit_inds, param_inds, n_params = get_circuit(n_qubits, circuit_depth)
-    M_inv = jnp.linalg.inv(M) # Omit this eventually and use a solve later as we should never invert a matrix
+    #M_inv = jnp.linalg.inv(M) # Omit this eventually and use a solve later as we should never invert a matrix
+    M_inv = M
     kBT     = 1 / beta 
     # combine them 
     params_for_sgada = (M, M_inv, mu_inv, N_d, kBT, sigma, sigma_a, batch_size)
