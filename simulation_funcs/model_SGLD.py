@@ -12,7 +12,7 @@ from jax import numpy as jnp, random, vmap, grad, value_and_grad, jit
 from .helper_funcs  import *
 
 ## Functions
-def run_simulation_SGLD(stochastic_flag,init_param,n_params, Nsteps, beta, batch_size, train_keys, param_to_st, data_probs,bandwidth_sq, data):
+def run_simulation_SGLD(stochastic_flag,init_param,n_params,h, Nsteps, beta, batch_size, train_keys, param_to_st, data_probs,bandwidth_sq, data):
     from jax import numpy as jnp, random, value_and_grad
     import time
 
@@ -25,6 +25,9 @@ def run_simulation_SGLD(stochastic_flag,init_param,n_params, Nsteps, beta, batch
     
     start_time = time.time() # Record the start time
 
+    # compute before the loop as they are reused
+    gamma = jnp.sqrt(2*h/ beta)
+
     for step in range(1, Nsteps):
         if stochastic_flag:
             cost_val, cost_grad = value_and_grad(param_to_mmd_stochastic)(params[step - 1], param_to_st, data, bandwidth_sq, batch_size)
@@ -33,17 +36,17 @@ def run_simulation_SGLD(stochastic_flag,init_param,n_params, Nsteps, beta, batch
       
         cost_vals = cost_vals.at[step - 1].set(cost_val)
         
-        stepsize = get_stepsize(step)
+        # stepsize = get_stepsize(step)
         
         new_param = (
             params[step - 1]
-            - stepsize * cost_grad
-            + jnp.sqrt(2 * stepsize / beta)
+            - h * cost_grad
+            + gamma 
             * random.normal(train_keys[step - 1], shape=(n_params,))
         )
         params = params.at[step].set(new_param)
 
-        progress = step / Nsteps
+        progress = (step+1) / Nsteps
         filled_length = int(bar_length * progress)
         bar = '█' * filled_length + '-' * (bar_length - filled_length)
         elapsed_time = time.time() - start_time # Compute the elapsed time
@@ -59,7 +62,7 @@ def run_simulation_SGLD(stochastic_flag,init_param,n_params, Nsteps, beta, batch
 def run_model_SGLD(data, hyperparameters, stochastic_flag=True, print_flag=False): 
     from jax import numpy as jnp, random, vmap
 
-    beta, n_steps, n_qubits, circuit_depth, batch_size = hyperparameters.values()
+    h,beta, n_steps, n_qubits, circuit_depth, batch_size = hyperparameters.values()
     number_of_data_points = len( data) 
     init_rad = 0.001 / jnp.pi
     # get_stepsize = lambda step: (step + 10) ** (-1 / 3)
@@ -68,7 +71,7 @@ def run_model_SGLD(data, hyperparameters, stochastic_flag=True, print_flag=False
     
     ## These take awhile for large data sets
     # computes pairwise
-    dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
+    #dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
     
     # get bandwidth
     bandwidth_sq = 5.7478714 #jnp.median(dist_mat) / 2
@@ -80,6 +83,7 @@ def run_model_SGLD(data, hyperparameters, stochastic_flag=True, print_flag=False
     param_to_st = qujax.get_params_to_statetensor_func(gates, qubit_inds, param_inds)
     data_probs = jnp.ones(len(data)) / len(data)
     # param_to_mmd_and_grad = jit(value_and_grad(param_to_mmd))
+    # param_to_mmd_and_grad = lambda func: jit(value_and_grad(param_to_mmd))
     
     init_param = random.uniform(
         init_key, shape=(n_params,), minval=-init_rad, maxval=init_rad
@@ -87,7 +91,7 @@ def run_model_SGLD(data, hyperparameters, stochastic_flag=True, print_flag=False
     
     train_keys = random.split(train_key, n_steps - 1)
     params, cost_vals, total_run_time = run_simulation_SGLD(stochastic_flag,init_param, n_params,
-                                                       n_steps, beta, batch_size, train_keys,
+                                                       h,n_steps, beta, batch_size, train_keys,
                                                        param_to_st, data_probs,bandwidth_sq, data)
     
     if print_flag:

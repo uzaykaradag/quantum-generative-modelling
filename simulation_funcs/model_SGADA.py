@@ -71,7 +71,7 @@ def run_model_SGADA(data, hyperparameters, stochastic_flag = True, print_flag=Fa
     random_key = random.PRNGKey(0)
     init_key, train_key = random.split(random_key)
     # get bandwidth
-    dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
+    # dist_mat = vmap(lambda a: vmap(lambda b: (a - b) ** 2)(data))(data)
     bandwidth_sq = 5.7478714 # for GMM #jnp.median(dist_mat) / 2 
 
     ## params
@@ -101,7 +101,7 @@ def run_model_SGADA(data, hyperparameters, stochastic_flag = True, print_flag=Fa
         q0=params[0],
         p0=np.random.randn(n_params),
         xi0=0.0,
-        h=0.1, 
+        h=h, 
         step_function= ld_BADODAB, 
         force= lambda q: -force_for_SGADA(q, param_to_st, data_probs, bandwidth_sq, data)[1], 
         Nsteps=n_steps, 
