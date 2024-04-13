@@ -1,5 +1,7 @@
 import os
 import pickle
+from simulation_funcs.model_SGADA import *
+from simulation_funcs.model_SGLD import *
 
 def run_experiment_1(data, qubit_range, depth_range, sgada_hyperparams, sgld_hyperparams, output_folder, stochastic_flag=False):
     if not os.path.exists(output_folder):
