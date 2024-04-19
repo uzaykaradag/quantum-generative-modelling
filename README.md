@@ -5,3 +5,5 @@
 3. Experiment_funcs containts the script to simulate these sampling algorithms on a Quantum Circuit Born Machine
 4. The results are stored in pkl files in folders named "Experiment_"
 5. For more background and report, see the slides and report.
+
+![Quantum Circuit Born Machine](images/circuit.png)
